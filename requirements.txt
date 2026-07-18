@@ -1,0 +1,91 @@
+# ===========================
+# Core AI Framework
+# ===========================
+langgraph>=0.6.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.3.0
+langchain-google-genai>=2.1.0
+
+# ===========================
+# FastAPI Backend
+# ===========================
+fastapi
+uvicorn[standard]
+python-multipart
+
+# ===========================
+# Database & Checkpointing
+# ===========================
+sqlalchemy
+psycopg[binary]
+asyncpg
+
+# ===========================
+# LangGraph Checkpointer
+# ===========================
+langgraph-checkpoint-postgres
+
+# ===========================
+# Docker Integration
+# ===========================
+docker
+
+# ===========================
+# HTTP Requests
+# ===========================
+httpx
+requests
+
+# ===========================
+# MCP
+# ===========================
+mcp
+
+# ===========================
+# Environment Variables
+# ===========================
+python-dotenv
+
+# ===========================
+# Validation
+# ===========================
+pydantic
+pydantic-settings
+
+# ===========================
+# Logging
+# ===========================
+loguru
+
+# ===========================
+# Observability (Optional)
+# ===========================
+logfire
+
+# ===========================
+# Slack Integration
+# ===========================
+slack_sdk
+
+# ===========================
+# Retry Utilities
+# ===========================
+tenacity
+
+# ===========================
+# JSON Utilities
+# ===========================
+orjson
+
+# ===========================
+# Testing
+# ===========================
+pytest
+pytest-asyncio
+
+# ===========================
+# Utilities
+# ===========================
+typing_extensions
+rich
