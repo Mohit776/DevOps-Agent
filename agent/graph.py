@@ -1,6 +1,20 @@
+import sys
+import os
+import logfire
 from langgraph.graph import StateGraph, END
+
+# Add root directory to path for config import
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
 from state import AgentState
+import config
 from nodes import diagnose_node, planner_node, execute_node, verify_node
+
+# Configure Logfire once at startup
+logfire.configure(token=config.LOGFIRE_TOKEN)
+logfire.info("🚀 DevOps Agent initialized")
 
 def build_graph():
     workflow = StateGraph(AgentState)
@@ -23,17 +37,27 @@ def build_graph():
 agent_app = build_graph()
 
 def run_agent(alert_data: dict):
-    print("\n[!] Triggering autonomous agent...")
-    initial_state = {
-        "alert": alert_data,
-        "diagnosis": "",
-        "plan": "",
-        "execution": "",
-        "verified": False
-    }
+    print("\n⚡ [!] Triggering autonomous agent...")
     
-    # Invoke the langgraph state machine
-    final_state = agent_app.invoke(initial_state)
-    
-    print(f"[✓] Agent completed. Final verification status: {final_state.get('verified')}\n")
-    return final_state
+    with logfire.span("🤖 agent_run", alert=alert_data):
+        logfire.info("📥 Alert received — starting agent run", alert=alert_data)
+        
+        initial_state = {
+            "alert": alert_data,
+            "diagnosis": "",
+            "plan": "",
+            "execution": "",
+            "verified": False
+        }
+        
+        final_state = agent_app.invoke(initial_state)
+        
+        verified = final_state.get("verified")
+        if verified:
+            logfire.info("🎉 Agent completed — service recovered!", verified=verified)
+        else:
+            logfire.warn("⚠️ Agent completed — service may still be down", verified=verified)
+        
+        print(f"{'🎉' if verified else '⚠️ '} Agent completed. Final verification status: {verified}\n")
+        return final_state
+

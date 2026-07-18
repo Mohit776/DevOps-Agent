@@ -36,7 +36,7 @@ def monitor_health():
             save_alert(alert)
             run_agent(asdict(alert))
             
-        time.sleep(10)
+        time.sleep(5)
 
 if __name__ == "__main__":
     monitor_health()
