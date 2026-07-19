@@ -34,12 +34,14 @@ def planner_node(state: AgentState):
 
 The application is unavailable.
 Decide the best remediation.
+You must choose an action that matches one of the available Docker tools: start_container, stop_container, restart_container, remove_container, list_containers, or get_container_logs.
 Return JSON only.
 
 Example output:
 {{
   "root_cause": "Application container stopped",
   "action": "restart_container",
+  "arguments": {{"container_id": "devopsagent-app-1"}},
   "risk": "LOW"
 }}
 """
@@ -56,7 +58,8 @@ Example output:
 
         try:
             plan_data = json.loads(content)
-            state["plan"] = plan_data.get("action", content)
+            # Store the full JSON string so execute.py can parse action and arguments
+            state["plan"] = json.dumps(plan_data)
             logfire.info("📝 Plan generated", plan=plan_data)
             print(f"📝 Generated Plan: {plan_data}")
         except json.JSONDecodeError:

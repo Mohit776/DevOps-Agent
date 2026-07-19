@@ -2,6 +2,7 @@ import sys
 import os
 import requests
 import logfire
+import time
 
 # Add parent directory to path to allow importing state if needed
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -18,6 +19,9 @@ def verify_node(state: AgentState):
     with logfire.span("🩺 verify_node", execution=state.get("execution", "")):
         print("🩺 ---VERIFYING REMEDIATION---")
         logfire.info("🔄 Calling health endpoint to verify recovery...")
+
+        print("⏳ Waiting 5 seconds for container to start...")
+        time.sleep(5)
 
         url = "http://localhost:3000/api/health"
         try:
