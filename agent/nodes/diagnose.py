@@ -154,9 +154,10 @@ def diagnose_node(state: AgentState) -> AgentState:
         try:
             print("\n🤖 Sending combined log + metrics summary to LLM for diagnosis...")
             with logfire.span("🤖 llm_diagnosis_combined", container_id=container_id):
-                # Enrich the log summary with metrics before sending to LLM
+                # Enrich the log summary with metrics and the original alert before sending to LLM
                 combined = dict(summary) if summary else {}
                 combined["metrics_snapshot"] = state.get("metrics_summary", {})
+                combined["alert"] = alert
 
                 diagnosis = _llm_diagnose(combined)
                 state["diagnosis"] = json.dumps(diagnosis)

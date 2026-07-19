@@ -1,17 +1,18 @@
 """
 kill_next.py
 ------------
-Stops the Next.js application whether it is:
-  1. Running as a local `npm run dev` / `node` process
-  2. Running inside a Docker container (image or name contains "next")
+Chaos script — stops the Next.js application Docker container.
+
+Usage:
+    python chaos/kill_next.py
+    python chaos/kill_next.py --wait 10     # wait 10s then kill
 """
 
 import subprocess
 import sys
+import argparse
+import time
 
-# ──────────────────────────────────────────────
-# 2. Kill Next.js Docker container (if any)
-# ──────────────────────────────────────────────
 
 def kill_docker_next() -> bool:
     """Stop the Docker Compose service named 'app'."""
@@ -22,7 +23,7 @@ def kill_docker_next() -> bool:
             "docker",
             "ps",
             "--format",
-            "{{.ID}}\t{{.Names}}\t{{.Label \"com.docker.compose.service\"}}"
+            '{{.ID}}\t{{.Names}}\t{{.Label "com.docker.compose.service"}}'
         ],
         capture_output=True,
         text=True
@@ -40,7 +41,6 @@ def kill_docker_next() -> bool:
 
         container_id, container_name, service = parts
 
-        # Change "app" if your compose service has a different name
         if service == "app":
             stop = subprocess.run(
                 ["docker", "stop", container_id],
@@ -60,17 +60,23 @@ def kill_docker_next() -> bool:
     return killed_any
 
 
-# ──────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────
-
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Chaos script: stop the Next.js application container."
+    )
+    parser.add_argument("--wait", type=float, default=0, help="Seconds to wait before killing (default: 0)")
+    args = parser.parse_args()
+
+    if args.wait > 0:
+        print(f"[~] Waiting {args.wait}s before triggering chaos...")
+        time.sleep(args.wait)
+
     print("=== kill_next.py — Stopping Next.js ===\n")
 
     docker_killed = kill_docker_next()
 
     print()
-    if local_killed or docker_killed:
+    if docker_killed:
         print("[✓] Next.js has been stopped.")
         sys.exit(0)
     else:

@@ -212,9 +212,15 @@ def _summarize(
                 "anomalies": len(errors),
             },
             "top_recurring_errors": [
-                {"message": msg, "occurrences": cnt} for msg, cnt in top_errors
+                {"message": msg[:200], "occurrences": cnt} for msg, cnt in top_errors
             ],
-            "raw_errors": errors[:30],  # cap payload size
+            "raw_errors": [
+                {
+                    "timestamp": e.get("timestamp"),
+                    "level": e.get("severity"),
+                    "message": e.get("message", "")[:300] + ("..." if len(e.get("message", "")) > 300 else "")
+                } for e in errors[:5]
+            ],
         }
         logfire.info("Summary generated", health=health)
         return result
@@ -223,7 +229,7 @@ def _summarize(
 def _llm_diagnose(summary: dict) -> dict:
     """Send the structured summary to an LLM and get a diagnosis + remediation."""
     with logfire.span("🤖 llm_diagnose_logs", health=summary.get("health")):
-        client = Groq(api_key=config.GROQ_API)
+        client = Groq(api_key=config.GROQ_FALLBACK_API)
 
         prompt = f"""You are a senior DevOps SRE. Analyse the following Docker container log summary and return a structured JSON diagnosis.
 

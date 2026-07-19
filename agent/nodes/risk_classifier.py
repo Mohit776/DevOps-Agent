@@ -40,7 +40,7 @@ def risk_classifier_node(state: AgentState) -> AgentState:
         except json.JSONDecodeError:
             plan_data = {"raw_plan": plan_raw}
             
-        client = Groq(api_key=config.GROQ_API)
+        client = Groq(api_key=config.GROQ_FALLBACK_API)
 
         prompt = f"""You are a senior security and DevOps engineer. Analyze the following remediation plan and classify its risk level.
 If the plan involves data deletion, major infrastructure changes, or high risk of downtime, it should require approval.

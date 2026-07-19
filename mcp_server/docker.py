@@ -98,6 +98,25 @@ def restart_container(container_id: str) -> str:
         return f"Failed to restart container: {result.stderr}"
 
 @mcp.tool()
+def docker_compose_up(service_name: str) -> str:
+    """Run docker-compose up -d --force-recreate for a specific service.
+    This is extremely useful to restore missing networks, missing volumes, or recover from fatal configuration issues.
+    
+    Args:
+        service_name: The name of the docker-compose service (e.g. 'app', 'mongo').
+    """
+    with logfire.span("🐳 docker_compose_up_tool", service_name=service_name):
+        # We assume docker-compose.yml is in root_dir or we can just use "docker compose" in root_dir
+        cmd = ["docker", "compose", "up", "-d", "--force-recreate", service_name]
+        result = subprocess.run(cmd, cwd=root_dir, capture_output=True, text=True)
+        if result.returncode == 0:
+            logfire.info("Successfully recreated service via compose", service_name=service_name)
+            return f"Successfully recreated service {service_name}"
+            
+        logfire.error("Failed to recreate service", service_name=service_name, error=result.stderr)
+        return f"Failed to recreate service {service_name}: {result.stderr}"
+
+@mcp.tool()
 def remove_container(container_id: str, force: bool = False) -> str:
     """Remove a Docker container.
     
