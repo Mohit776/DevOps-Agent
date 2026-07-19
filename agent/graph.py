@@ -44,6 +44,7 @@ def run_agent(alert_data: dict):
         
         initial_state = {
             "alert": alert_data,
+            "log_summary": {},        # populated by diagnose_node via Log MCP
             "diagnosis": "",
             "plan": "",
             "execution": "",

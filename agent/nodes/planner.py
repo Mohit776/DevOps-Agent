@@ -1,3 +1,14 @@
+"""
+Planner Node
+============
+Converts the structured LLM diagnosis (produced by diagnose_node via Log MCP)
+into an actionable remediation plan.
+
+If the diagnosis already contains a `docker_tool_action`, it is used directly.
+Otherwise, the planner calls the Groq LLM with the full log summary context
+to determine the best remediation.
+"""
+
 import sys
 import os
 import json
@@ -9,7 +20,7 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-# Add root directory to path to allow importing config
+# Add root directory for config import
 root_dir = os.path.dirname(parent_dir)
 if root_dir not in sys.path:
     sys.path.append(root_dir)
@@ -17,54 +28,109 @@ if root_dir not in sys.path:
 from state import AgentState
 import config
 
-def planner_node(state: AgentState):
+
+def planner_node(state: AgentState) -> AgentState:
     """
     Planner node.
-    Uses Groq LLM to reason about the alert and determine a plan.
+
+    Priority:
+      1. If diagnose_node already produced a valid docker_tool_action → use it.
+      2. Otherwise, call the LLM with the full log summary + alert context.
     """
-    with logfire.span("🧠 planner_node", diagnosis=state.get("diagnosis", "")):
-        logfire.info("🤔 Sending alert to LLM for remediation planning...")
-        print("🧠 ---PLANNING REMEDIATION (LLM)---")
+    diagnosis_raw = state.get("diagnosis", "{}")
+    log_summary = state.get("log_summary", {})
+    alert = state.get("alert", {})
+
+    with logfire.span("🧠 planner_node", diagnosis=diagnosis_raw):
+        logfire.info("🤔 Planning remediation based on Log MCP diagnosis...")
+        print("🧠 ---PLANNING REMEDIATION---")
+
+        # ── Parse the LLM diagnosis produced by diagnose_node ───────────────
+        try:
+            diagnosis = json.loads(diagnosis_raw) if isinstance(diagnosis_raw, str) else diagnosis_raw
+        except json.JSONDecodeError:
+            diagnosis = {}
+
+        action = diagnosis.get("docker_tool_action", "")
+        arguments = diagnosis.get("docker_tool_arguments", {})
+
+        # ── Case 1: diagnose_node already decided — just reformat as plan ───
+        if action and action != "none":
+            container_id = arguments.get("container_id") or alert.get("container_id", "devopsagent-app-1")
+            arguments.setdefault("container_id", container_id)
+
+            plan_data = {
+                "root_cause": diagnosis.get("root_cause", "Unknown"),
+                "action": action,
+                "arguments": arguments,
+                "risk": _map_urgency_to_risk(diagnosis.get("urgency", "SOON")),
+                "recommended_actions": diagnosis.get("recommended_actions", []),
+                "source": "log_mcp_diagnosis",
+            }
+
+            state["plan"] = json.dumps(plan_data)
+            logfire.info("📝 Plan derived from Log MCP diagnosis", plan=plan_data, risk=plan_data.get("risk"))
+            print(f"📝 Plan (from Log MCP): {json.dumps(plan_data, indent=2)}")
+            return state
+
+        # ── Case 2: No clear action — call LLM with full context ────────────
+        logfire.info("🤔 No action in diagnosis — calling LLM for plan...")
+        print("🤔 Diagnosis had no action — calling LLM...")
 
         client = Groq(api_key=config.GROQ_API)
-        alert_json = json.dumps(state.get("alert", {}), indent=2)
 
-        prompt = f"""Input:
-{alert_json}
+        context = {
+            "alert": alert,
+            "log_summary": log_summary,
+            "diagnosis": diagnosis,
+        }
 
-The application is unavailable.
-Decide the best remediation.
-You must choose an action that matches one of the available Docker tools: start_container, stop_container, restart_container, remove_container, list_containers, or get_container_logs.
-Return JSON only.
+        prompt = f"""You are a senior DevOps engineer. Given the following Docker container alert and log analysis, determine the best remediation action.
 
-Example output:
+Context:
+{json.dumps(context, indent=2)}
+
+Available Docker tools:
+  - start_container
+  - stop_container
+  - restart_container
+  - remove_container
+  - list_containers
+  - get_container_logs
+
+Return ONLY valid JSON:
 {{
-  "root_cause": "Application container stopped",
-  "action": "restart_container",
-  "arguments": {{"container_id": "devopsagent-app-1"}},
-  "risk": "LOW"
-}}
-"""
+  "root_cause": "<one-line root cause>",
+  "action": "<docker tool name>",
+  "arguments": {{"container_id": "<name>"}},
+  "risk": "<LOW|MEDIUM|HIGH>"
+}}"""
 
         response = client.chat.completions.create(
             model=config.MODEL_120B,
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            response_format={"type": "json_object"}
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
         )
 
         content = response.choices[0].message.content
-
         try:
             plan_data = json.loads(content)
-            # Store the full JSON string so execute.py can parse action and arguments
+            plan_data["source"] = "llm_fallback"
             state["plan"] = json.dumps(plan_data)
-            logfire.info("📝 Plan generated", plan=plan_data)
-            print(f"📝 Generated Plan: {plan_data}")
+            logfire.info("📝 Plan generated by LLM fallback", plan=plan_data, risk=plan_data.get("risk"))
+            print(f"📝 Generated Plan (LLM fallback): {plan_data}")
         except json.JSONDecodeError:
             state["plan"] = content
             logfire.warn("⚠️ LLM returned non-JSON plan", raw_output=content)
             print(f"⚠️  Generated Plan (raw): {content}")
 
     return state
+
+
+def _map_urgency_to_risk(urgency: str) -> str:
+    """Map LLM urgency level to Docker action risk rating."""
+    return {
+        "IMMEDIATE": "HIGH",
+        "SOON": "MEDIUM",
+        "MONITOR": "LOW",
+    }.get(urgency.upper(), "MEDIUM")
