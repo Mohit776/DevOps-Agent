@@ -1,5 +1,6 @@
 import sys
 import os
+import json
 import logfire
 from langgraph.graph import StateGraph, END
 
@@ -10,28 +11,71 @@ if root_dir not in sys.path:
 
 from state import AgentState
 import config
-from nodes import diagnose_node, planner_node, execute_node, verify_node
+from nodes import diagnose_node, planner_node, risk_classifier_node, human_approval_node, execute_node, verify_node
 
 # Configure Logfire once at startup
 logfire.configure(token=config.LOGFIRE_TOKEN)
 logfire.info("🚀 DevOps Agent initialized")
 
+
+def _needs_approval(state: AgentState) -> str:
+    """Conditional edge: route to human_approval if risk classifier requires it."""
+    try:
+        risk_data = json.loads(state.get("risk_assessment", "{}"))
+    except Exception:
+        risk_data = {}
+    if risk_data.get("approval_required", False):
+        return "human_approval"
+    return "execute"
+
+
+def _approval_gate(state: AgentState) -> str:
+    """Conditional edge: proceed to execute only if human approved."""
+    if state.get("human_approved", False):
+        return "execute"
+    return "end"
+
+
 def build_graph():
     workflow = StateGraph(AgentState)
-    
-    # Add all our nodes
+
+    # Add all nodes
     workflow.add_node("diagnose", diagnose_node)
     workflow.add_node("planner", planner_node)
+    workflow.add_node("risk_classifier", risk_classifier_node)
+    workflow.add_node("human_approval", human_approval_node)
     workflow.add_node("execute", execute_node)
     workflow.add_node("verify", verify_node)
-    
-    # Define the flow
+
+    # Linear flow up to risk classifier
     workflow.set_entry_point("diagnose")
     workflow.add_edge("diagnose", "planner")
-    workflow.add_edge("planner", "execute")
+    workflow.add_edge("planner", "risk_classifier")
+
+    # Conditional: needs approval?
+    workflow.add_conditional_edges(
+        "risk_classifier",
+        _needs_approval,
+        {
+            "human_approval": "human_approval",
+            "execute": "execute",
+        }
+    )
+
+    # Conditional: was the plan approved?
+    workflow.add_conditional_edges(
+        "human_approval",
+        _approval_gate,
+        {
+            "execute": "execute",
+            "end": END,
+        }
+    )
+
+    # Execute → Verify → END
     workflow.add_edge("execute", "verify")
     workflow.add_edge("verify", END)
-    
+
     return workflow.compile()
 
 agent_app = build_graph()
@@ -48,6 +92,8 @@ def run_agent(alert_data: dict):
             "metrics_summary": {},    # populated by diagnose_node via Metrics MCP
             "diagnosis": "",
             "plan": "",
+            "risk_assessment": "",
+            "human_approved": False,  # set by human_approval_node
             "execution": "",
             "verified": False
         }

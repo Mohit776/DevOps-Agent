@@ -1,8 +1,8 @@
 import sys
 import os
-import subprocess
-import logfire
 import json
+import asyncio
+import logfire
 
 # Add parent directory to path to allow importing state if needed
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -11,102 +11,69 @@ if parent_dir not in sys.path:
 
 from state import AgentState
 
+# Add mcp_server to import docker MCP
+root_dir = os.path.dirname(parent_dir)
+if os.path.join(root_dir, "mcp_server") not in sys.path:
+    sys.path.insert(0, os.path.join(root_dir, "mcp_server"))
 
-def _run_docker_tool(tool_name: str, arguments: dict) -> str:
-    """
-    Execute a Docker CLI command based on the tool name chosen by the LLM.
-
-    This mirrors the exact tools exposed by mcp_server/docker.py but calls
-    the Docker CLI directly, avoiding the MCP stdio‑subprocess issues on
-    Windows.
-    """
-    container_id = arguments.get("container_id", "")
-
-    if tool_name == "list_containers":
-        cmd = ["docker", "ps"]
-        if arguments.get("all"):
-            cmd.append("-a")
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.stdout
-
-    elif tool_name == "get_container_logs":
-        tail = str(arguments.get("tail", 100))
-        cmd = ["docker", "logs", "--tail", tail, container_id]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        return result.stdout + result.stderr
-
-    elif tool_name == "start_container":
-        cmd = ["docker", "start", container_id]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            return f"Successfully started container {container_id}"
-        return f"Failed to start container: {result.stderr}"
-
-    elif tool_name == "stop_container":
-        cmd = ["docker", "stop", container_id]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            return f"Successfully stopped container {container_id}"
-        return f"Failed to stop container: {result.stderr}"
-
-    elif tool_name == "restart_container":
-        cmd = ["docker", "restart", container_id]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            return f"Successfully restarted container {container_id}"
-        return f"Failed to restart container: {result.stderr}"
-
-    elif tool_name == "remove_container":
-        cmd = ["docker", "rm"]
-        if arguments.get("force"):
-            cmd.append("-f")
-        cmd.append(container_id)
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode == 0:
-            return f"Successfully removed container {container_id}"
-        return f"Failed to remove container: {result.stderr}"
-
-    else:
-        return f"Unknown tool: {tool_name}"
+import docker as docker_mcp
 
 
 def execute_node(state: AgentState):
     """
     Execute node.
-    Parses the LLM plan and runs the appropriate Docker command.
+    The executor does not know about Docker directly. It acts as an MCP client.
+    It takes the structured tool calls from the plan and executes them.
     """
     plan = state.get("plan", "{}")
+    
     with logfire.span("⚙️ execute_node", plan=plan):
         print("⚙️  ---EXECUTING PLAN---")
-        logfire.info("🚀 Executing remediation plan", plan=plan)
+        logfire.info("🚀 Executing remediation plan via MCP")
 
         # Parse plan JSON produced by planner_node
-        if isinstance(plan, str):
-            try:
-                plan_data = json.loads(plan)
-            except json.JSONDecodeError:
-                plan_data = {"action": plan, "arguments": {"container_id": "devopsagent-app-1"}}
-        else:
-            plan_data = plan
-
-        tool_name = plan_data.get("action", "restart_container")
-        arguments = plan_data.get("arguments", {"container_id": "devopsagent-app-1"})
-
-        # Provide a safe fallback container_id when LLM omits it
-        if "container_id" not in arguments and tool_name != "list_containers":
-            arguments["container_id"] = "devopsagent-app-1"
-
         try:
-            print(f"🐳 Executing docker tool '{tool_name}' with {arguments}...")
-            output = _run_docker_tool(tool_name, arguments)
-
-            state["execution"] = f"Tool output: {output}"
-            logfire.info("✅ Docker tool executed successfully", output=output)
-            print(f"✅ Docker tool executed successfully:\n{output}")
-        except Exception as e:
-            error_msg = f"Failed to execute docker tool: {e}"
-            state["execution"] = error_msg
-            logfire.error("❌ Failed to execute docker tool", error=str(e))
-            print(f"❌ Error executing plan: {e}")
+            plan_data = json.loads(plan) if isinstance(plan, str) else plan
+        except json.JSONDecodeError:
+            plan_data = {"steps": []}
+            
+        steps = plan_data.get("steps", [])
+        if not steps:
+            state["execution"] = "No plan steps to execute."
+            return state
+        
+        execution_results = []
+        
+        for step in steps:
+            tool_name = step.get("tool")
+            arguments = step.get("arguments", {})
+            print(f"🔄 Executing step: {tool_name} with {arguments}")
+            
+            if not tool_name:
+                execution_results.append("Step missing tool name.")
+                continue
+                
+            try:
+                # Call Docker MCP Tool asynchronously
+                result = asyncio.run(docker_mcp.mcp.call_tool(tool_name, arguments))
+                
+                # Store Result
+                execution_results.append(f"Executed '{tool_name}': {result}")
+                logfire.info("✅ MCP tool executed successfully", tool=tool_name, result=result)
+                
+                # FastMCP returns a sequence of ContentBlocks, let's extract text if possible
+                if isinstance(result, list):
+                    result_text = "\n".join([r.text for r in result if hasattr(r, 'text')])
+                    print(f"✅ MCP Tool result:\n{result_text}")
+                else:
+                    print(f"✅ MCP Tool result:\n{result}")
+                    
+            except Exception as e:
+                error_msg = f"Failed to execute MCP tool {tool_name}: {e}"
+                execution_results.append(f"ERROR executing '{tool_name}': {error_msg}")
+                logfire.error("❌ Failed to execute MCP tool", error=str(e))
+                print(f"❌ Error executing tool: {e}")
+                
+        state["execution"] = "\n".join(execution_results)
 
     return state

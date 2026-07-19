@@ -75,12 +75,8 @@ def diagnose_node(state: AgentState) -> AgentState:
                     print(f"⚠️  No logs returned from container '{container_id}'.")
                     state["diagnosis"] = json.dumps({
                         "root_cause": f"Container '{container_id}' is not running or produces no logs.",
-                        "confidence": "HIGH",
-                        "impact": "Application is unreachable.",
-                        "recommended_actions": ["start_container"],
-                        "docker_tool_action": "start_container",
-                        "docker_tool_arguments": {"container_id": container_id},
-                        "urgency": "IMMEDIATE",
+                        "confidence": 1.0,
+                        "evidence": [f"Container '{container_id}' produced no logs"]
                     })
                     state["log_summary"] = {}
                     state["metrics_summary"] = {}
@@ -168,24 +164,19 @@ def diagnose_node(state: AgentState) -> AgentState:
                 logfire.info(
                     "✅ LLM diagnosis complete",
                     root_cause=diagnosis.get("root_cause"),
-                    urgency=diagnosis.get("urgency"),
-                    action=diagnosis.get("docker_tool_action"),
+                    confidence=diagnosis.get("confidence"),
                 )
                 print(f"\n📋 Root Cause: {diagnosis.get('root_cause', 'unknown')}")
-                print(f"   Urgency:    {diagnosis.get('urgency', 'unknown')}")
-                print(f"   Action:     {diagnosis.get('docker_tool_action', 'none')}\n")
+                print(f"   Confidence: {diagnosis.get('confidence', 'unknown')}")
+                print(f"   Evidence:   {diagnosis.get('evidence', [])}\n")
 
         except Exception as exc:
             logfire.error("❌ LLM diagnosis failed", error=str(exc))
             print(f"❌ LLM diagnosis error: {exc}")
             state["diagnosis"] = json.dumps({
                 "root_cause": f"Diagnosis failed: {exc}",
-                "confidence": "LOW",
-                "impact": "Unknown — diagnosis pipeline error.",
-                "recommended_actions": ["Investigate manually", "Restart container"],
-                "docker_tool_action": "restart_container",
-                "docker_tool_arguments": {"container_id": container_id},
-                "urgency": "SOON",
+                "confidence": 0.0,
+                "evidence": ["Diagnosis pipeline error"]
             })
 
     return state

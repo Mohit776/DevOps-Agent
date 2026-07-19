@@ -233,15 +233,11 @@ Log Summary:
 Return ONLY valid JSON with this exact structure:
 {{
   "root_cause": "<one-line root cause>",
-  "confidence": "<HIGH|MEDIUM|LOW>",
-  "impact": "<brief impact description>",
-  "recommended_actions": [
-    "<action 1>",
-    "<action 2>"
-  ],
-  "docker_tool_action": "<one of: restart_container | stop_container | start_container | remove_container | get_container_logs | none>",
-  "docker_tool_arguments": {{"container_id": "<name>"}},
-  "urgency": "<IMMEDIATE|SOON|MONITOR>"
+  "confidence": <float between 0.0 and 1.0>,
+  "evidence": [
+    "<supporting evidence string 1>",
+    "<supporting evidence string 2>"
+  ]
 }}"""
 
         resp = client.chat.completions.create(
