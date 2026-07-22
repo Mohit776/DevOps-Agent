@@ -33,8 +33,8 @@ flowchart TD
 
     RISK --> COND{"Approval Required?"}
 
-    COND -->|Yes (High / Critical Risk)| HITL["Human Approval Node (human_approval.py)"]
-    COND -->|No (Low / Medium Risk)| EXEC["Execute Node (execute.py)"]
+    COND -->|Yes - High or Critical Risk| HITL["Human Approval Node (human_approval.py)"]
+    COND -->|No - Low or Medium Risk| EXEC["Execute Node (execute.py)"]
 
     HITL -->|Approved| EXEC
     HITL -->|Rejected| END_ABORT(["Execution Aborted"])
