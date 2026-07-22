@@ -2,57 +2,62 @@
 
 An intelligent, self-healing DevOps agent built with **LangGraph**, **FastMCP (Model Context Protocol)**, and **Groq (LLMs)**. The agent automatically monitors dockerized services, detects failures, analyzes logs and system metrics, formulates remediation plans, evaluates risk levels, executes recovery actions via Docker MCP tools, and verifies service recovery.
 
+## 💻 Tech Stack
+
+- **Agent Orchestration**: LangGraph (StateGraph workflow engine)
+- **LLM Reasoning**: Groq API (`openai/gpt-oss-120b`, `openai/gpt-oss-20b`) & Gemini API
+- **Tool Protocol**: FastMCP (Model Context Protocol for Docker, Logs, and Metrics tools)
+- **Observability & Tracing**: Pydantic Logfire (Distributed tracing across agent nodes and MCP servers)
+- **Infrastructure & Containerization**: Docker Engine, Docker Compose
+- **Monitored Demo Application**: Next.js (App/API) & MongoDB 6
+- **Language & Runtime**: Python 3.10+
+
 ---
 
 ## 📐 Architecture & Workflow
 
-```mermaid
-flowchart TD
-    subgraph Infrastructure ["Docker Compose Stack"]
-        APP["Next.js App"]
-        DB[("MongoDB Database")]
-    end
-
-    MON["Health Monitor (agent/moniter.py)"] -->|Check Failed| ALERT["Alert Generated"]
-    APP -.->|GET /api/health| MON
-
-    ALERT --> DIAG["Diagnose Node (diagnose.py)"]
-
-    subgraph DataGathering ["MCP Data Pipelines"]
-        LOG["Log MCP Server\n(Logs Parsing & Error Extraction)"]
-        METRICS["Metrics MCP Server\n(Docker Stats & Bottleneck Signal)"]
-    end
-
-    DIAG --> LOG
-    DIAG --> METRICS
-
-    LOG --> PLAN["Planner Node (planner.py)"]
-    METRICS --> PLAN
-
-    PLAN --> RISK["Risk Classifier Node (risk_classifier.py)"]
-
-    RISK --> COND{"Approval Required?"}
-
-    COND -->|Yes - High or Critical Risk| HITL["Human Approval Node (human_approval.py)"]
-    COND -->|No - Low or Medium Risk| EXEC["Execute Node (execute.py)"]
-
-    HITL -->|Approved| EXEC
-    HITL -->|Rejected| END_ABORT(["Execution Aborted"])
-
-    EXEC -->|Invoke Tools| DOCKER_MCP["Docker FastMCP Server"]
-    DOCKER_MCP -->|restart / up / start| Infrastructure
-
-    EXEC --> VERIFY["Verify Node (verify.py)"]
-    VERIFY -->|GET /api/health| APP
-    VERIFY --> END_SUCCESS(["Recovery Verified"])
-
-    subgraph Observability ["Observability & Tracing"]
-        LOGFIRE["Logfire Tracing"]
-    end
-
-    DIAG -.- LOGFIRE
-    PLAN -.- LOGFIRE
-    EXEC -.- LOGFIRE
+```text
+                 Docker Compose Stack
+                        │
+         (Next.js App  /  MongoDB Database)
+                        │
+                        ▼
+                 Health Monitor
+                        │
+                 Alert Generated
+                        │
+            ┌───────────┴───────────┐
+            ▼                       ▼
+      Log MCP Server       Metrics MCP Server
+     (Logs Parsing &        (Docker Stats &
+      Error Extraction)    Bottlenecks Signal)
+            │                       │
+            └───────────┬───────────┘
+                        ▼
+                 LangGraph Agent
+                        │
+     ┌──────────────────┼──────────────────┐
+     ▼                  ▼                  ▼
+ Diagnosing          Planning        Risk Classifier
+     │                  │                  │
+     └──────────────────┼──────────────────┘
+                        │
+              Needs Approval? (y/n)
+              ┌─────────┴─────────┐
+     High Risk│                   │Safe / Approved
+              │                   │
+              ▼                   ▼
+      Human Approval         Docker MCP Execution
+        (Terminal)            (start/restart/up)
+              │                   │
+              └─────────┬─────────┘
+                        ▼
+                  Verify Recovery
+             (GET /api/health Check)
+                        │
+                        ▼
+              Observability & Tracing
+                    (Logfire)
 ```
 
 ---
